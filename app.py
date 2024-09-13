@@ -98,7 +98,7 @@ def main():
     if 'tmp_file_path' not in st.session_state:
         st.session_state.tmp_file_path = None
 
-    st.markdown("<h1 class='main-title'>Examiner.AI:<br> AI Proctored Exam System </h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-title'>ProctorVision:<br> AI Proctored Exam System </h1>", unsafe_allow_html=True)
 
     # Sidebar for controls
     with st.sidebar:
