@@ -1,6 +1,8 @@
 import cv2
 import streamlit as st
+import tempfile
 import time
+import os
 from functions import *
 
 st.set_page_config(
@@ -84,21 +86,25 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Initialize the camera
-camera = cv2.VideoCapture(1)
-
-def process_frame(camera):
+def process_frame(video_cap):
     # Call the function that processes the video feed and returns metrics
-    result, eye_d, head_d, fps, obj_d, alert_msg = run(camera)
+    result, eye_d, head_d, fps, obj_d, alert_msg = run(video_cap)
     return result, eye_d, head_d, fps, obj_d, alert_msg
 
 def main():
+    if 'uploaded_file' not in st.session_state:
+        st.session_state.uploaded_file = None
+
+    if 'tmp_file_path' not in st.session_state:
+        st.session_state.tmp_file_path = None
+
     st.markdown("<h1 class='main-title'>Examiner.AI:<br> AI Proctored Exam System </h1>", unsafe_allow_html=True)
 
-    # Sidebar for camera control buttons
+    # Sidebar for controls
     with st.sidebar:
         st.header("Controls")
-        start_button = st.button("Start Monitoring")
+        uploaded_file = st.file_uploader("Upload a video file", type=["mp4", "avi", "mov"])
+        start_button = st.button("Start Processing")
         stop_button = st.button("Stop/Reset")
 
         # Placeholder for warnings below the buttons
@@ -108,145 +114,156 @@ def main():
         warning_placeholder3 = st.empty()
         warning_placeholder4 = st.empty()
 
-    # Placeholder for the camera status message
-    camera_status_placeholder = st.empty()
-
-    # st.markdown("<h3 class='subheader'>Live Video Feed</h3>", unsafe_allow_html=True)
-    subheading1_placeholder = st.empty()
-    subheading1_placeholder.markdown("<p class='camera-status'>Press 'Start Monitoring' to begin.</p>", unsafe_allow_html=True)
-    # Placeholder for video feed with reduced height
-    FRAME_WINDOW = st.image([])  # Placeholder for the video feed
-
-    # st.markdown("<h3 class='subheader'>Real-Time Metrics</h3>", unsafe_allow_html=True)
-    subheading2_placeholder = st.empty()
-    c1, c2, c3, c4 = st.columns([1, 1, 1, 1])
-    # Create placeholders for real-time metrics using the card-based UI
-    with c1:
-        fps_placeholder = st.empty()
-    with c2:
-        eye_placeholder = st.empty()
-    with c3:
-        head_placeholder = st.empty()
-    with c4:
-        obj_placeholder = st.empty()
-
-    # Initialize warning and violation counters
+    # Initialize a flag to manage the initial message and layout
+    video_active = False
     violation_count = 0
-    camera_active = False  # Flag to track camera status
 
-    # If the start button is pressed
-    if start_button:
-        camera_status_placeholder.markdown("<p class='camera-status'>Camera is active. Press 'Stop/Reset' to stop.</p>", unsafe_allow_html=True)
-        prev_time = time.time()
-        camera_active = True
+    # Main container
+    with st.container():
+        # Placeholder for the camera status message
+        video_status_placeholder = st.empty()
+        subheading1_placeholder = st.empty()
+        subheading2_placeholder = st.empty()
 
-    while camera_active:
-        ret, frame = camera.read()
+        # Only show the initial message if the start button has not been clicked
+        if not video_active:
+            subheading1_placeholder.markdown("<p class='camera-status'>Upload a video file and press 'Start Processing'.</p>", unsafe_allow_html=True)
 
-        if not ret:
-            st.error("Failed to capture video. Check your camera connection.")
-            break
+        # Initialize placeholders for the video feed and metrics
+        with st.expander("Video Feed", expanded=video_active):
+            FRAME_WINDOW = st.image([])  # Placeholder for the video feed
 
-        # Check if the frame is valid before processing
-        if frame is not None:
-            # Calculate frame rate
-            current_time = time.time()
-            elapsed_time = current_time - prev_time
-            fps = 1 / elapsed_time if elapsed_time > 0 else 0
-            prev_time = current_time
+        with st.expander("Real-Time Metrics", expanded=video_active):
+            c1, c2, c3, c4 = st.columns([1, 1, 1, 1])
+            with c1:
+                fps_placeholder = st.empty()
+            with c2:
+                eye_placeholder = st.empty()
+            with c3:
+                head_placeholder = st.empty()
+            with c4:
+                obj_placeholder = st.empty()
 
-            # Convert the frame to RGB for displaying
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            frame_rgb = cv2.flip(frame_rgb, 1)
+        if start_button and uploaded_file:
+            # Hide the initial message and update video status
+            st.session_state.uploaded_file = uploaded_file
+            subheading1_placeholder.empty()
+            video_status_placeholder.markdown("<p class='camera-status'>Processing video file. Press 'Stop/Reset' to stop.</p>", unsafe_allow_html=True)
+            video_active = True
 
-            # Resize the frame to reduce height (adjust width to maintain aspect ratio)
-            frame_rgb = cv2.resize(frame_rgb, (int(frame_rgb.shape[1] * 1.0), int(frame_rgb.shape[0] * 0.75)))
+            with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+                tmp_file.write(uploaded_file.read())
+                st.session_state.tmp_file_path = tmp_file.name
 
-            if frame_rgb is not None:
-                subheading1_placeholder.markdown("<h3 class='subheader'>Live Video Feed</h3>", unsafe_allow_html=True)
-                FRAME_WINDOW.image(frame_rgb, caption="Live Feed", use_column_width=False)
-                subheading2_placeholder.markdown("<h3 class='subheader'>Real-Time Metrics</h3>", unsafe_allow_html=True)
+            # Initialize VideoCapture with the temporary file path
+            video_cap = cv2.VideoCapture(st.session_state.tmp_file_path)
+
+            while video_active:
+                try:
+                    ret, frame = video_cap.read()
+
+                    if not ret:
+                        if violation_count < 4:
+                            st.success("Exam completed successfully.")
+                        video_active = False
+                        break
+                except Exception as e:
+                    st.error(f"Error during video processing: {e}")
 
                 # Process frame metrics
-                result, eye_d, head_d, fps, obj_d, alert_msg = process_frame(camera)
+                result, eye_d, head_d, fps, obj_d, alert_msg = process_frame(video_cap)
 
-                if not result:
-                    violation_count += 1
-                    warning_count_placeholder.markdown(f"<p class='warning'>Warnings: {violation_count}</p>", unsafe_allow_html=True)
+                # Convert frame to RGB and display
+                if frame is not None:
+                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    frame_rgb = cv2.flip(frame_rgb, 1)
+                    frame_rgb = cv2.resize(frame_rgb, (int(frame_rgb.shape[1] * 1.0), int(frame_rgb.shape[0] * 1.0)))
 
-                    if violation_count == 1:
-                        warning_placeholder1.warning(alert_msg)  # Display warning in sidebar
-                        # speak(alert_msg)
-                    elif violation_count == 2:
-                        warning_placeholder2.warning(alert_msg)  # Display warning in sidebar
-                        # speak(alert_msg)
+                    FRAME_WINDOW.image(frame_rgb, caption="Processed Feed", use_column_width=True)
 
-                    if violation_count == 3:
-                        warning_placeholder3.warning(alert_msg)
-                        # speak(alert_msg)
-                        # speak("This is the last warning, after this, your exam will be terminated.")
+                    if not result:
+                        violation_count += 1
+                        warning_count_placeholder.markdown(f"<p class='warning'>Warnings: {violation_count}</p>", unsafe_allow_html=True)
 
-                    # If 4th warning is triggered, stop the camera automatically
-                    if violation_count == 4:
-                        camera_active = False  # Auto-stop camera after 4th warning
-                        break
+                        if violation_count == 1:
+                            warning_placeholder1.warning(alert_msg)  # Display warning
+                        elif violation_count == 2:
+                            warning_placeholder2.warning(alert_msg)  # Display warning
+                        elif violation_count == 3:
+                            warning_placeholder3.warning(alert_msg)
+                        
+                        # If 4th warning is triggered, stop processing automatically
+                        if violation_count == 4:
+                            video_active = False  # Auto-stop video processing after 4th warning
+                            break
 
-                else:
-                    # Update real-time metrics with card-based UI
-                    fps_placeholder.markdown(f"""
-                        <div class="metric-card fps-card">
-                            <h2>FPS</h2>
-                            <p>{fps:.2f}</p>
-                        </div>
-                    """, unsafe_allow_html=True)
+                    else:
+                        # Update real-time metrics with card-based UI
+                        fps_placeholder.markdown(f"""
+                            <div class="metric-card fps-card">
+                                <h2>FPS</h2>
+                                <p>{fps:.2f}</p>
+                            </div>
+                        """, unsafe_allow_html=True)
 
-                    eye_placeholder.markdown(f"""
-                        <div class="metric-card eye-card">
-                            <h2>Eye Direction</h2>
-                            <p>{eye_d}</p>
-                        </div>
-                    """, unsafe_allow_html=True)
+                        eye_placeholder.markdown(f"""
+                            <div class="metric-card eye-card">
+                                <h2>Eye Direction</h2>
+                                <p>{eye_d}</p>
+                            </div>
+                        """, unsafe_allow_html=True)
 
-                    head_placeholder.markdown(f"""
-                        <div class="metric-card head-card">
-                            <h2>Head Direction</h2>
-                            <p>{head_d}</p>
-                        </div>
-                    """, unsafe_allow_html=True)
+                        head_placeholder.markdown(f"""
+                            <div class="metric-card head-card">
+                                <h2>Head Direction</h2>
+                                <p>{head_d}</p>
+                            </div>
+                        """, unsafe_allow_html=True)
 
-                    obj_placeholder.markdown(f"""
-                        <div class="metric-card obj-card">
-                            <h2>Background</h2>
-                            <p>{"Ok" if obj_d else "Object detected"}</p>
-                        </div>
-                    """, unsafe_allow_html=True)
+                        obj_placeholder.markdown(f"""
+                            <div class="metric-card obj-card">
+                                <h2>Background</h2>
+                                <p>{"Ok" if obj_d else "Object detected"}</p>
+                            </div>
+                        """, unsafe_allow_html=True)
 
-        # Stop if the stop button is pressed
-        if stop_button:
-            camera_active = False
-            break
+                # Stop if the stop button is pressed
+                if stop_button:
+                    video_active = False
+                    break
 
-        # Add a short delay to reduce CPU usage
-        time.sleep(0.01)
+                # Add a short delay to reduce CPU usage
+                time.sleep(0.01)
 
-    # Clear all video frames, metrics, and status after camera is stopped
-    FRAME_WINDOW.empty()
-    fps_placeholder.empty()
-    eye_placeholder.empty()
-    head_placeholder.empty()
-    obj_placeholder.empty()
-    camera_status_placeholder.empty()  # Clear the camera status message
-    warning_placeholder1.empty() 
-    warning_placeholder2.empty()
-    warning_placeholder3.empty() # Clear the warning messages
-    warning_placeholder4.empty()
-    if violation_count == 4:
-        st.warning("The exam has been terminated. Please contact the administrator.")
-        # speak("The exam has been terminated. Please contact the administrator.")
+            # Clear all video frames, metrics, and status after processing is stopped
+            FRAME_WINDOW.empty()
+            fps_placeholder.empty()
+            eye_placeholder.empty()
+            head_placeholder.empty()
+            obj_placeholder.empty()
+            video_status_placeholder.empty()  # Clear the video status message
+            warning_placeholder1.empty() 
+            warning_placeholder2.empty()
+            warning_placeholder3.empty()  # Clear the warning messages
+            warning_placeholder4.empty()
+            
+            # Show message if terminated by warnings
+            if violation_count == 4:
+                st.warning("The exam has been terminated. Please contact the administrator.")
 
-    # Cleanup resources
-    camera.release()
-    # cv2.destroyAllWindows()
+            # Cleanup resources
+            video_cap.release()
+            if st.session_state.tmp_file_path and os.path.exists(st.session_state.tmp_file_path):
+                os.remove(st.session_state.tmp_file_path)
+                # st.info("Temporary video file deleted.")
+                st.session_state.tmp_file_path = None
+
+            # Remove uploaded file from session state
+            if st.session_state.uploaded_file:
+                st.session_state.uploaded_file = None
+                st.info("Uploaded video file removed.")
+                # st.info("Temporary video file deleted.")
+
 
 if __name__ == "__main__":
     main()

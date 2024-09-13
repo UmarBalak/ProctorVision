@@ -382,22 +382,35 @@ def obj_detect(ret, image):
 def run(camera):
     global change_dir_counter, start_time, dir_warning_counter, visibility_counter, vis_warning_counter, warning_count, alerts
     
+    # Capture the frame from the camera
     ret, frame = camera.read()
+
+    # Check if the frame is valid
+    if not ret or frame is None:
+        return None, None, None, None, None, "End of video or error reading frame."
+
+    # Flip and resize the frame for uniform input
     frame = cv2.flip(frame, 1)  # Flip the frame horizontally
     frame = cv2.resize(frame, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)  # Resize for uniform input
-    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)  # Convert frame to RGB
+    
+    # Convert the frame to RGB for processing
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
-    results = face_mesh.process(rgb_frame)  # Process the frame for face landmarks
+    # Process the frame for face landmarks using face_mesh
+    results = face_mesh.process(rgb_frame)
+    
     direction, head_direction = '', ''
     obj_d = True
     fps = 0
 
     # If face landmarks are detected
     if results.multi_face_landmarks:
-        head_direction = head_pose(rgb_frame, results)  # Get head direction
+        # Get head direction
+        head_direction = head_pose(rgb_frame, results)
 
         if head_direction in ["Center", "Up"]:
-            eye_direction = eye_track(ret, frame, rgb_frame, results)  # Track eye direction
+            # Track eye direction
+            eye_direction = eye_track(ret, frame, rgb_frame, results)
             direction = eye_direction
         else:
             direction = head_direction
@@ -418,12 +431,13 @@ def run(camera):
                 return False, direction, head_direction, fps, obj_d, alerts["direction"][0]
             return True, direction, head_direction, fps, obj_d, None
         else:
+            # Detect any objects in the background
             obj_d = obj_detect(ret, frame)
             if not obj_d:
-                return False, direction, head_direction, fps, obj_d, alerts["object"][0] 
+                return False, direction, head_direction, fps, obj_d, alerts["object"][0]
             return True, direction, head_direction, fps, obj_d, None
     else:
-        # If no face detected, increment visibility counter
+        # If no face is detected, increment the visibility counter
         end = time.time()
         totalTime = end - start_time
         fps = 1 / totalTime if totalTime > 0 else 0
@@ -435,8 +449,9 @@ def run(camera):
             change_dir_counter = 0
             vis_warning_counter += 1
             warning_count += 1
-            return False, direction, head_direction, fps, obj_d, alerts["visibility"][0] 
+            return False, direction, head_direction, fps, obj_d, alerts["visibility"][0]
         return True, direction, head_direction, fps, obj_d, None
+
 
 
 
