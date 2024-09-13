@@ -6,7 +6,7 @@ import os
 from functions import *
 
 st.set_page_config(
-    page_title="Examiner.AI",
+    page_title="ProctorVision",
     page_icon=":camera:",
     initial_sidebar_state="expanded",
 )
