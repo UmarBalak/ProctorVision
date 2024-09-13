@@ -85,7 +85,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Initialize the camera
-camera = cv2.VideoCapture(0)
+camera = cv2.VideoCapture(1)
 
 def process_frame(camera):
     # Call the function that processes the video feed and returns metrics
